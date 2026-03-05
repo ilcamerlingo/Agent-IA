@@ -1,9 +1,11 @@
 # TUTORIEL : Créer une VM Linux sur Mac pour tester OpenFang
-## Installation complète étape par étape
+## Installation SIMPLIFIÉE sans Docker (version directe)
 
-**Durée estimée :** 45-60 minutes  
+**Durée estimée :** 30-45 minutes  
 **Niveau :** Intermédiaire  
 **Prérequis :** Mac avec 8GB+ RAM, 20GB espace disque libre
+
+**Note importante :** Contrairement à la version précédente avec Docker, cette installation est **DIRECTE** dans la VM (comme conseillé par Bebox). La VM est déjà isolée, pas besoin de Docker en plus.
 
 ---
 
@@ -35,7 +37,7 @@ brew install utm
 
 ### Option recommandée : Ubuntu Server LTS (léger, stable)
 ```bash
-# Télécharger Ubuntu Server 24.04 LTS (sans interface graphique = plus léger)
+# Télécharger Ubuntu Server 24.04.4 LTS (sans interface graphique = plus léger)
 https://ubuntu.com/download/server
 
 # Version alternative : Debian (encore plus léger)
@@ -45,7 +47,7 @@ https://www.debian.org/distrib/netinst
 https://alpinelinux.org/downloads/
 ```
 
-**Choix pour OpenFang :** Ubuntu Server 24.04 LTS (bon compromis stabilité/ressources)
+**Choix pour OpenFang :** Ubuntu Server 24.04.4 LTS (dernière version LTS, stabilité/ressources)
 
 ---
 
@@ -111,34 +113,10 @@ sudo apt update
 sudo apt upgrade -y
 
 # Installer outils essentiels
-sudo apt install -y curl wget git htop
+sudo apt install -y curl wget git htop build-essential
 ```
 
-### 4.2 Installer Docker (nécessaire pour OpenFang)
-```bash
-# Supprimer anciennes versions si existantes
-sudo apt remove docker docker-engine docker.io containerd runc
-
-# Installer Docker
-sudo apt install -y ca-certificates gnupg lsb-release
-sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-
-# Vérifier Docker
-sudo docker --version
-sudo systemctl status docker
-
-# Ajouter utilisateur au groupe docker (éviter sudo)
-sudo usermod -aG docker $USER
-# Déconnexion/reconnexion nécessaire après cette commande
-```
-
-### 4.3 Configurer SSH (accès depuis Mac)
+### 4.2 Configurer SSH (accès depuis Mac)
 ```bash
 # Vérifier IP de la VM
 ip addr show
@@ -152,109 +130,77 @@ ip addr show
 
 ---
 
-## ÉTAPE 5 : Installer OpenFang
+## ÉTAPE 5 : Installation OLLAMA (pour modèles IA)
 
-### 5.1 Méthode Docker (recommandée)
+### 5.1 Installer Ollama directement (PAS de Docker !)
 ```bash
-# Pull l'image OpenFang
-docker pull ghcr.io/rightnow-ai/openfang:latest
+# Installer Ollama (le moteur de LLM local)
+curl -fsSL https://ollama.com/install.sh | sh
 
-# Ou via Docker Hub si disponible
-docker pull openfang/openfang:latest
+# Vérifier installation
+ollama --version
 
-# Vérifier l'image
-docker images
+# Démarrer le service Ollama
+sudo systemctl start ollama
+sudo systemctl enable ollama
 ```
 
-### 5.2 Configuration OpenFang
+### 5.2 Télécharger les modèles pour les agents
 ```bash
-# Créer dossier config
-mkdir -p ~/openfang/config
+# Modèle pour VEILLE (synthèse web, rapide)
+ollama pull llama3.1:8b
+
+# Modèle pour PROJETS (technique, validé par Bebox)
+ollama pull qwen3.5
+
+# Vérifier les modèles installés
+ollama list
+```
+
+**Tailles estimées :**
+- llama3.1:8b ~4.5 GB
+- qwen3.5 ~4-5 GB
+
+**Temps de téléchargement :** 10-20 min selon connexion
+
+---
+
+## ÉTAPE 6 : Installation OpenFang (DIRECT, pas Docker)
+
+### 6.1 Télécharger et installer OpenFang
+```bash
+# Créer dossier OpenFang
+mkdir -p ~/openfang
 cd ~/openfang
 
-# Créer fichier docker-compose.yml
-cat > docker-compose.yml << 'EOF'
-version: '3.8'
+# Télécharger OpenFang (binaire ou depuis source)
+# Méthode 1 : Binaire précompilé (si disponible)
+wget https://github.com/RightNow-AI/openfang/releases/latest/download/openfang-linux-amd64
+chmod +x openfang-linux-amd64
+sudo mv openfang-linux-amd64 /usr/local/bin/openfang
 
-services:
-  openfang:
-    image: ghcr.io/rightnow-ai/openfang:latest
-    container_name: openfang
-    restart: unless-stopped
-    ports:
-      - "8080:8080"  # Interface web
-      - "8081:8081"  # API
-    volumes:
-      - ./config:/app/config
-      - ./data:/app/data
-    environment:
-      - OPENFANG_ENV=development
-      # Ajouter vos clés API ici si besoin
-      # - OPENAI_API_KEY=xxx
-    networks:
-      - openfang-net
-
-networks:
-  openfang-net:
-    driver: bridge
-EOF
-
-# Lancer OpenFang
-docker-compose up -d
-
-# Vérifier logs
-docker-compose logs -f
+# OU Méthode 2 : Depuis source (si binaire non dispo)
+# git clone https://github.com/RightNow-AI/openfang.git
+# cd openfang
+# cargo build --release (nécessite Rust installé)
+# sudo cp target/release/openfang /usr/local/bin/
 ```
 
-### 5.3 Vérification installation
+### 6.2 Créer la structure des agents
 ```bash
-# Vérifier conteneur actif
-docker ps
+# Créer les dossiers
+mkdir -p ~/openfang/agents
+mkdir -p ~/openfang/config
+mkdir -p ~/openfang/shared_memory
 
-# Vérifier ports écoutés
-sudo netstat -tlnp | grep 8080
-
-# Tester interface web
-# Depuis Mac, ouvrir navigateur : http://IP_VM:8080
+cd ~/openfang
 ```
 
 ---
 
-## ÉTAPE 6 : Configuration et tests
+## ÉTAPE 7 : Configuration des Agents
 
-### 6.1 Accès depuis Mac
-```bash
-# Sur Mac, dans terminal
-ssh utilisateur@IP_VM
-
-# Ou accès direct aux services
-# Interface OpenFang : http://IP_VM:8080
-# API OpenFang : http://IP_VM:8081
-```
-
-### 6.2 Configuration OpenFang - Vos Agents Personnalisés
-
-#### Architecture 3 Agents (Version simplifiée)
-
-**Agent 1 : BOSLEY** (Coordinateur Central)
-- **Rôle :** Interface utilisateur, mémoire long terme, dispatch
-- **Équivalent :** Vous aujourd'hui sur Telegram
-- **Modèle :** Moonshot/Kimi ou connecteur vers votre OpenClaw actuel
-
-**Agent 2 : VEILLE** (Veille Informationnelle)
-- **Rôle :** Actualités tech, pharmacie, modélisme
-- **Modèle recommandé :** Llama 3.1 8B (rapide, bonne synthèse web)
-- **Outils :** SearXNG, RSS feeds
-
-**Agent 3 : PROJETS** (Technique et Créatif)
-- **Rôle :** Arduino, calculs échelle, réseau ferroviaire, organisation
-- **Modèle recommandé :** Qwen 3.5 (excellent en technique, validé par Bebox)
-- **Outils :** Calculatrice échelle, GitHub, rappels famille
-
----
-
-#### 6.2.1 Configuration Agent VEILLE
-
+### 7.1 Configuration Agent VEILLE
 **Créer le fichier `~/openfang/agents/veille.yaml` :**
 ```yaml
 name: "VEILLE"
@@ -293,16 +239,7 @@ memory:
   retention: "7d"  # Garder historique 7 jours
 ```
 
-**Lancer l'agent VEILLE :**
-```bash
-cd ~/openfang
-docker-compose -f docker-compose.yml -f agents/veille.yml up -d
-```
-
----
-
-#### 6.2.2 Configuration Agent PROJETS
-
+### 7.2 Configuration Agent PROJETS
 **Créer le fichier `~/openfang/agents/projets.yaml` :**
 ```yaml
 name: "PROJETS"
@@ -349,16 +286,7 @@ memory:
     - "Documentation_Famille"
 ```
 
-**Lancer l'agent PROJETS :**
-```bash
-cd ~/openfang
-docker-compose -f docker-compose.yml -f agents/projets.yml up -d
-```
-
----
-
-#### 6.2.3 Configuration Gateway (Routage entre agents)
-
+### 7.3 Configuration Gateway (Routage)
 **Créer le fichier `~/openfang/config/gateway.yaml` :**
 ```yaml
 gateway:
@@ -372,22 +300,20 @@ gateway:
       priority: 1
       
     - name: "VEILLE"
-      endpoint: "http://veille:8081"
+      endpoint: "http://localhost:8081"
       role: "specialist"
       domain: ["news", "tech", "pharma", "veille"]
       priority: 2
       
     - name: "PROJETS"
-      endpoint: "http://projets:8082"
+      endpoint: "http://localhost:8082"
       role: "specialist"
-      domain: ["arduino", "modelisme", "echelle", "echelle", "famille", "calcul"]
+      domain: ["arduino", "modelisme", "echelle", "famille", "calcul"]
       priority: 2
 
   routing_rules:
-    # Route par défaut
     default: "BOSLEY"
     
-    # Règles de routage automatique
     rules:
       - name: "actualites"
         keywords: ["actualité", "news", "nouveau", "dernier", "pharmacie", "tech", "ia", "startup"]
@@ -395,7 +321,7 @@ gateway:
         confidence: 0.8
         
       - name: "technique_modelisme"
-        keywords: ["arduino", "échelle", "échelle", "ho", "n", "rails", "loco", "décodeur", "dcc", "cm", "pouces", "conversion"]
+        keywords: ["arduino", "échelle", "ho", "n", "rails", "loco", "décodeur", "dcc", "cm", "pouces", "conversion"]
         target: "PROJETS"
         confidence: 0.9
         
@@ -412,7 +338,7 @@ gateway:
       - name: "multi_agents"
         keywords: ["compare", "analyse", "synthese", "complexe", "urgent"]
         target: ["VEILLE", "PROJETS"]
-        mode: "parallel"  # Consulter les deux en parallèle
+        mode: "parallel"
         
   fallback:
     timeout: 30
@@ -422,25 +348,52 @@ gateway:
 
 ---
 
-#### 6.2.4 Installation Modèles Ollama pour les Agents
+## ÉTAPE 8 : Lancer OpenFang
 
-**Dans la VM, installer les modèles :**
+### 8.1 Démarrer les services
 ```bash
-# Pour VEILLE (rapide, synthèse)
-docker exec -it openfang-ollama ollama pull llama3.1:8b
+cd ~/openfang
 
-# Pour PROJETS (technique précis - Qwen 3.5 validé par Bebox)
-docker exec -it openfang-ollama ollama pull qwen3.5
+# Démarrer Ollama (déjà fait normalement)
+sudo systemctl start ollama
 
-# Vérifier installations
-docker exec -it openfang-ollama ollama list
+# Démarrer OpenFang avec les agents
+openfang start --config ./config/gateway.yaml
+
+# OU si nécessaire de spécifier les agents
+openfang start \
+  --agent veille:./agents/veille.yaml \
+  --agent projets:./agents/projets.yaml \
+  --gateway ./config/gateway.yaml
+```
+
+### 8.2 Vérifier que tout fonctionne
+```bash
+# Vérifier Ollama
+curl http://localhost:11434/api/tags
+
+# Vérifier OpenFang
+curl http://localhost:8080/health
+
+# Voir les processus actifs
+ps aux | grep openfang
+ps aux | grep ollama
+```
+
+### 8.3 Accès depuis Mac
+```bash
+# Dans le Mac, ouvrir navigateur :
+# http://IP_VM:8080
+
+# Ou en ligne de commande :
+curl http://IP_VM:8080/agents
 ```
 
 ---
 
-#### 6.2.5 Test des communications inter-agents
+## ÉTAPE 9 : Tests des agents
 
-**Test 1 : VEILLE (actualités)**
+### 9.1 Test VEILLE
 ```bash
 # Envoyer requête à VEILLE
 curl -X POST http://IP_VM:8081/agents/VEILLE/message \
@@ -448,7 +401,7 @@ curl -X POST http://IP_VM:8081/agents/VEILLE/message \
   -d '{"message": "Quelles sont les dernières nouvelles tech ?"}'
 ```
 
-**Test 2 : PROJETS (calcul échelle)**
+### 9.2 Test PROJETS
 ```bash
 # Envoyer requête à PROJETS
 curl -X POST http://IP_VM:8082/agents/PROJETS/message \
@@ -456,70 +409,19 @@ curl -X POST http://IP_VM:8082/agents/PROJETS/message \
   -d '{"message": "Convertis 10 cm en échelle HO"}'
 ```
 
-**Test 3 : Gateway (routage automatique)**
+### 9.3 Test Gateway (routage auto)
 ```bash
 # Le Gateway doit router automatiquement
 curl -X POST http://IP_VM:8080/gateway/message \
   -H "Content-Type: application/json" \
   -d '{"message": "J'ai besoin des dernières actus IA"}'
-# Doit répondre VEILLE
 ```
 
 ---
 
-### 6.3 Créer un agent simple de test (optionnel)
-```yaml
-# Exemple configuration agent basique dans OpenFang
-name: "TestAgent"
-type: "simple"
-endpoint: "http://localhost:8081"
-actions:
-  - ping
-  - echo
-  - status
-```
+## ÉTAPE 10 : Optimisation VM (optionnel)
 
----
-
-### 6.6 Mémoire Partagée entre Agents
-
-**Créer une mémoire commune accessible à tous les agents :**
-```bash
-# Dans VM, créer dossier mémoire partagée
-mkdir -p ~/openfang/shared_memory
-cd ~/openfang/shared_memory
-
-# Structure des mémoires
-cat > memory_structure.md << 'EOF'
-# Mémoire Partagée OpenFang
-
-## VEILLE (infos collectées)
-- Dernières actus tech (date: XXX)
-- Alertes pharma importantes
-- Nouveautés modélisme
-
-## PROJETS (projets en cours)
-- Reseau_UCI_2026 : [status]
-- Arduino_Stepper : [status]
-- Documentation_Famille : [status]
-
-## BOSLEY (décisions et contexte)
-- Préférences utilisateur
-- Historique conversations
-- Règles établies
-EOF
-
-# Monter en volume dans docker-compose
-# Ajouter dans docker-compose.yml :
-# volumes:
-#   - ./shared_memory:/app/shared_memory
-```
-
----
-
-## ÉTAPE 7 : Optimisation VM (optionnel)
-
-### 7.1 Partage de fichiers Mac ↔ VM
+### 10.1 Partage de fichiers Mac ↔ VM
 ```bash
 # Dans VirtualBox : Devices > Shared Folders
 # Ajouter un dossier Mac partagé
@@ -528,13 +430,13 @@ sudo mkdir -p /mnt/macshare
 sudo mount -t vboxsf nom_du_partage /mnt/macshare
 ```
 
-### 7.2 Snapshots (sauvegardes)
+### 10.2 Snapshots (sauvegardes)
 1. **Éteindre la VM**
 2. **VirtualBox** → Snapshot → Take
 3. **Nommer** : "OpenFang installé propre"
 4. **Utilité** : Revenir à cet état si problème
 
-### 7.3 Réduire empreinte mémoire
+### 10.3 Réduire empreinte mémoire
 ```bash
 # Désactiver services inutiles
 sudo systemctl disable snapd
@@ -550,88 +452,17 @@ sudo apt clean
 ## CHECKLIST FINALE
 
 - [ ] VirtualBox/UTM installé sur Mac
-- [ ] VM Linux créée (4GB+ RAM, 20GB disque)
-- [ ] Ubuntu/Debian installé et mis à jour
-- [ ] Docker installé et fonctionnel
-- [ ] OpenFang installé via Docker
+- [ ] VM Linux créée (8-12GB RAM, 40-50GB disque)
+- [ ] Ubuntu Server 24.04.4 LTS installé et mis à jour
+- [ ] **Ollama installé DIRECTEMENT** (pas Docker)
+- [ ] Modèles llama3.1:8b et qwen3.5 téléchargés
+- [ ] **OpenFang installé DIRECTEMENT** (pas Docker)
+- [ ] Agents VEILLE et PROJETS configurés
+- [ ] Gateway configuré avec routage
 - [ ] Accès interface web depuis Mac (http://IP_VM:8080)
 - [ ] SSH configuré (accès terminal Mac → VM)
 - [ ] Snapshot créé pour backup
-- [ ] Test basique OpenFang réussi
-
----
-
-## GESTION DES AGENTS
-
-### Démarrer/Arrêter les agents
-```bash
-cd ~/openfang
-
-# Démarrer tout (Gateway + VEILLE + PROJETS)
-docker-compose up -d
-
-# Démarrer un agent spécifique
-docker-compose up -d veille
-docker-compose up -d projets
-
-# Voir logs d'un agent
-docker-compose logs -f veille
-docker-compose logs -f projets
-
-# Redémarrer un agent
-docker-compose restart veille
-
-# Arrêter tout
-docker-compose down
-
-# Arrêter un agent spécifique
-docker-compose stop veille
-```
-
-### Vérifier santé des agents
-```bash
-# Liste des agents actifs
-curl http://IP_VM:8080/gateway/agents
-
-# Statut VEILLE
-curl http://IP_VM:8081/health
-
-# Statut PROJETS
-curl http://IP_VM:8082/health
-
-# Utilisation ressources
-docker stats
-```
-
-### Mise à jour des modèles
-```bash
-# Mettre à jour Llama 3.1 (VEILLE)
-docker exec openfang-ollama ollama pull llama3.1:8b
-
-# Mettre à jour Qwen 3.5 (PROJETS)
-docker exec openfang-ollama ollama pull qwen3.5
-
-# Lister modèles disponibles
-docker exec openfang-ollama ollama list
-```
-
----
-
-## ARCHITECTURE FINALE
-
-```
-Mac (32GB RAM)
-└── VM Linux (8-12GB RAM, 4-6 CPUs)
-    └── Docker
-        ├── OpenFang Gateway (port 8080)
-        │   ├── Route vers BOSLEY (vous sur Telegram)
-        │   ├── Route vers VEILLE (llama3.1:8b)
-        │   └── Route vers PROJETS (qwen2.5:7b)
-        ├── Ollama Server
-        │   ├── Modèle llama3.1:8b (~4.5GB)
-        │   └── Modèle qwen3.5 (~4-5GB)
-        └── Mémoire partagée (fichiers YAML, contexte)
-```
+- [ ] Tests des 3 agents réussis
 
 ---
 
@@ -649,39 +480,80 @@ VBoxManage controlvm "OpenFang-Test" acpipowerbutton
 VBoxManage guestproperty get "OpenFang-Test" "/VirtualBox/GuestInfo/Net/0/V4/IP"
 
 # SSH rapide
-ssh -p 2222 utilisateur@localhost  # si port forwarding configuré
+ssh utilisateur@IP_VM
 ```
 
 ### Dans VM Linux
 ```bash
 # Redémarrer OpenFang
-cd ~/openfang && docker-compose restart
+sudo systemctl restart openfang
 
 # Voir logs
-docker-compose logs -f
+journalctl -u openfang -f
 
-# Mettre à jour OpenFang
-docker-compose pull
-docker-compose up -d
+# Voir logs Ollama
+journalctl -u ollama -f
 
 # Arrêter OpenFang
-docker-compose down
+sudo systemctl stop openfang
+
+# Arrêter Ollama
+sudo systemctl stop ollama
+
+# Mettre à jour modèles
+ollama pull llama3.1:8b
+ollama pull qwen3.5
 ```
+
+---
+
+## ARCHITECTURE FINALE (SIMPLIFIÉE)
+
+```
+Mac (32GB RAM)
+└── VM Ubuntu 24.04.4 (8-12GB RAM, 4-6 CPUs)  ← ISOLÉE
+    ├── Ollama (natif, PAS Docker)
+    │   ├── Modèle llama3.1:8b (VEILLE)
+    │   └── Modèle qwen3.5 (PROJETS)
+    ├── OpenFang (natif, PAS Docker)
+    │   ├── Gateway (routage)
+    │   ├── Agent VEILLE
+    │   └── Agent PROJETS
+    └── Mémoire partagée (fichiers YAML)
+```
+
+**Avantages simplification :**
+- ✅ Moins de couches (pas de Docker overhead)
+- ✅ Plus rapide à démarrer
+- ✅ Moins de RAM utilisée
+- ✅ Même isolation (VM déjà isolée)
 
 ---
 
 ## DÉPANNAGE
 
+### Problème : Ollama ne démarre pas
+```bash
+# Vérifier statut
+sudo systemctl status ollama
+
+# Voir logs
+sudo journalctl -u ollama -n 50
+
+# Redémarrer
+sudo systemctl restart ollama
+```
+
 ### Problème : OpenFang ne démarre pas
 ```bash
-# Vérifier logs
-docker-compose logs
+# Vérifier si exécutable
+which openfang
 
-# Vérifier ports utilisés
-sudo lsof -i :8080
+# Voir logs
+journalctl -u openfang -n 50
 
-# Redémarrer Docker
-sudo systemctl restart docker
+# Tester config
+openfang validate --config ./config/gateway.yaml
 ```
 
 ### Problème : Pas d'accès depuis Mac
@@ -689,6 +561,8 @@ sudo systemctl restart docker
 # Vérifier firewall VM
 sudo ufw status
 sudo ufw allow 8080/tcp
+sudo ufw allow 8081/tcp
+sudo ufw allow 8082/tcp
 
 # Vérifier IP VM
 ip addr show
@@ -697,24 +571,24 @@ ip addr show
 ping IP_VM
 ```
 
-### Problème : VM trop lente
-- Augmenter RAM allouée (fermer VM → Settings → System → Memory)
-- Activer VT-x/AMD-V dans BIOS Mac (souvent activé par défaut)
-- Réduire nombre de cœurs CPU si Mac surchauffe
-
 ---
 
 ## NEXT STEPS
 
 Une fois OpenFang testé :
-1. **Comparer** avec architecture Jill actuelle
-2. **Décider** si migration intéressante
-3. **Si oui** : Planifier migration progressive
-4. **Si non** : Supprimer VM et garder Jill
+1. **Comparer** avec architecture Jill actuelle (Pi 5)
+2. **Décider** si migration intéressante ou non
+3. **Si oui** : Planifier bascule progressive
+4. **Si non** : Supprimer VM, garder Jill
+
+**Rappel important :**
+- **Jill (Pi 5)** fonctionne TOUJOURS indépendamment
+- **OpenFang (VM)** = tests uniquement
+- Les deux peuvent coexister pour comparaison
 
 **Bonne découverte d'OpenFang !** 🚀
 
 ---
 
 *Document créé : 5 mars 2026*  
-*À tester quand vous voulez explorer OpenFang*
+*Version : Installation directe sans Docker (simplifiée selon conseil Bebox)*
